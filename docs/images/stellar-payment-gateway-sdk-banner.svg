@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Stellar Payment Gateway SDK">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0f1e"/>
+      <stop offset="55%" stop-color="#0f1c38"/>
+      <stop offset="100%" stop-color="#0b2b4d"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4cc9f0"/>
+      <stop offset="100%" stop-color="#4361ee"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#72efdd"/>
+      <stop offset="100%" stop-color="#4cc9f0"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#b7e4ff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4cc9f0" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#4cc9f0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#bg)"/>
+
+  <!-- subtle grid dots -->
+  <g fill="#ffffff" opacity="0.05">
+    <circle cx="60" cy="260" r="2"/><circle cx="120" cy="260" r="2"/><circle cx="180" cy="260" r="2"/>
+    <circle cx="240" cy="260" r="2"/><circle cx="960" cy="40" r="2"/><circle cx="1020" cy="40" r="2"/>
+    <circle cx="1080" cy="40" r="2"/><circle cx="1140" cy="40" r="2"/><circle cx="1100" cy="90" r="2"/>
+  </g>
+
+  <!-- gateway mark -->
+  <circle cx="150" cy="150" r="130" fill="url(#glow)"/>
+  <circle cx="150" cy="150" r="64" fill="none" stroke="url(#ring)" stroke-width="12"/>
+  <circle cx="150" cy="150" r="78" fill="none" stroke="#4cc9f0" stroke-opacity="0.25" stroke-width="2"/>
+
+  <!-- payment arrow through the gateway -->
+  <path d="M 96 208 L 212 108" fill="none" stroke="url(#arrow)" stroke-width="14" stroke-linecap="round"/>
+  <path d="M 212 108 L 212 158 M 212 108 L 162 108" stroke="#0a0f1e" stroke-width="8" stroke-linecap="round" fill="none"/>
+  <circle cx="96" cy="208" r="10" fill="#72efdd"/>
+  <path d="M 212 108 l 10 -24 l 24 10 z" fill="#4cc9f0"/>
+
+  <!-- text -->
+  <text x="270" y="138" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="46" font-weight="700" fill="url(#title)" letter-spacing="1">Stellar Payment Gateway SDK</text>
+  <text x="272" y="182" font-family="Segoe UI, Arial, Helvetica, sans-serif" font-size="19" font-weight="400" fill="#8fb6d9" letter-spacing="0.5">Soroban smart contracts for payments, budgets, and private spending limits</text>
+
+  <rect x="272" y="200" width="560" height="3" rx="1.5" fill="url(#ring)" opacity="0.7"/>
+</svg>

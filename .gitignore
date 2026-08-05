@@ -1,0 +1,43 @@
+# Rust / Cargo
+/target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+
+# Soroban
+*.wasm
+.soroban/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Ignore generated root files and temporary outputs
+*.json
+!package.json
+!tsconfig.json
+*.txt
+/*.js
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# Test artifacts
+*.profraw
+lcov.info
+coverage/
+**/test_snapshots/

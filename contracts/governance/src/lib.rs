@@ -1,0 +1,531 @@
+#![no_std]
+//! Governance contract for Stellar Payment Gateway SDK.
+//!
+//! Provides a proposal-based governance mechanism where:
+//! - Proposals can be created by any authenticated address
+//! - Voting is open to any address (token/stake weighting is a future enhancement)
+//! - Proposals have configurable approval thresholds and deadlines
+//! - Approved proposals update on-chain configuration values
+//! - Full lifecycle events are emitted (proposed, voted, executed)
+
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
+    Env, String,
+};
+
+#[derive(Clone)]
+#[contracttype]
+pub enum GovernanceDataKey {
+    Admin,
+    RequiredApprovals,
+    ProposalCount,
+    Proposal(u32),
+    UserVote(u32, Address),
+    ConfigValue(String),
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct Proposal {
+    pub id: u32,
+    pub proposer: Address,
+    pub config_key: String,
+    pub config_value: String,
+    pub approvals: u32,
+    pub executed: bool,
+    pub deadline: u64,
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum GovernanceError {
+    NotInitialized = 1,
+    AlreadyInitialized = 2,
+    Unauthorized = 3,
+    ProposalNotFound = 4,
+    AlreadyVoted = 5,
+    ProposalExpired = 6,
+    AlreadyExecuted = 7,
+    NotEnoughApprovals = 8,
+    Overflow = 9,
+    InvalidInput = 10,
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+pub struct GovernanceEvents;
+
+impl GovernanceEvents {
+    pub fn admin_updated(env: &Env, previous_admin: &Address, new_admin: &Address) {
+        let topics = (symbol_short!("gov"), symbol_short!("admin"));
+        env.events().publish(
+            topics,
+            (
+                previous_admin.clone(),
+                new_admin.clone(),
+                env.ledger().timestamp(),
+            ),
+        );
+    }
+
+    pub fn proposal_created(
+        env: &Env,
+        id: u32,
+        proposer: &Address,
+        config_key: &String,
+        config_value: &String,
+    ) {
+        let topics = (symbol_short!("gov"), symbol_short!("created"));
+        env.events().publish(
+            topics,
+            (
+                id,
+                proposer.clone(),
+                config_key.clone(),
+                config_value.clone(),
+                env.ledger().timestamp(),
+            ),
+        );
+    }
+
+    pub fn voted(env: &Env, id: u32, voter: &Address) {
+        let topics = (symbol_short!("gov"), symbol_short!("voted"));
+        env.events()
+            .publish(topics, (id, voter.clone(), env.ledger().timestamp()));
+    }
+
+    pub fn proposal_executed(env: &Env, id: u32, config_key: &String, config_value: &String) {
+        let topics = (symbol_short!("gov"), symbol_short!("executed"));
+        env.events().publish(
+            topics,
+            (
+                id,
+                config_key.clone(),
+                config_value.clone(),
+                env.ledger().timestamp(),
+            ),
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+pub fn initialize_governance(env: &Env, admin: Address, required_approvals: u32) {
+    if env.storage().instance().has(&GovernanceDataKey::Admin) {
+        panic_with_error!(env, GovernanceError::AlreadyInitialized);
+    }
+    env.storage()
+        .instance()
+        .set(&GovernanceDataKey::Admin, &admin);
+    env.storage()
+        .instance()
+        .set(&GovernanceDataKey::RequiredApprovals, &required_approvals);
+    env.storage()
+        .instance()
+        .set(&GovernanceDataKey::ProposalCount, &0u32);
+}
+
+pub fn require_admin(env: &Env, caller: &Address) {
+    caller.require_auth();
+    let admin: Address = env
+        .storage()
+        .instance()
+        .get(&GovernanceDataKey::Admin)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::NotInitialized));
+    if admin != *caller {
+        panic_with_error!(env, GovernanceError::Unauthorized);
+    }
+}
+
+pub fn update_admin(env: &Env, current_admin: Address, new_admin: Address) {
+    require_admin(env, &current_admin);
+    env.storage()
+        .instance()
+        .set(&GovernanceDataKey::Admin, &new_admin);
+    GovernanceEvents::admin_updated(env, &current_admin, &new_admin);
+}
+
+const MAX_CONFIG_STRING_LENGTH: u32 = 256;
+
+/// Validate that a governance proposal has been passed (approved, not expired, not yet executed).
+/// This is the key function used by external contracts (e.g., contract-upgrade) to verify
+/// governance approval before performing privileged actions.
+pub fn is_proposal_valid(env: &Env, proposal_id: u32) -> bool {
+    let proposal: Proposal = env
+        .storage()
+        .persistent()
+        .get(&GovernanceDataKey::Proposal(proposal_id))
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::ProposalNotFound));
+
+    if proposal.executed {
+        return false;
+    }
+
+    if env.ledger().timestamp() > proposal.deadline {
+        return false;
+    }
+
+    let required_approvals: u32 = env
+        .storage()
+        .instance()
+        .get(&GovernanceDataKey::RequiredApprovals)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::NotInitialized));
+
+    proposal.approvals >= required_approvals
+}
+
+pub fn create_proposal(
+    env: &Env,
+    proposer: Address,
+    config_key: String,
+    config_value: String,
+    duration_seconds: u64,
+) -> u32 {
+    proposer.require_auth();
+
+    if config_key.len() > MAX_CONFIG_STRING_LENGTH || config_key.len() == 0 {
+        panic_with_error!(env, GovernanceError::InvalidInput);
+    }
+    if config_value.len() > MAX_CONFIG_STRING_LENGTH {
+        panic_with_error!(env, GovernanceError::InvalidInput);
+    }
+    if duration_seconds == 0 {
+        panic_with_error!(env, GovernanceError::InvalidInput);
+    }
+
+    let count: u32 = env
+        .storage()
+        .instance()
+        .get(&GovernanceDataKey::ProposalCount)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::NotInitialized));
+
+    let new_id = count
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::Overflow));
+    let current_time = env.ledger().timestamp();
+    let deadline = current_time
+        .checked_add(duration_seconds)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::Overflow));
+
+    let proposal = Proposal {
+        id: new_id,
+        proposer: proposer.clone(),
+        config_key: config_key.clone(),
+        config_value: config_value.clone(),
+        approvals: 0,
+        executed: false,
+        deadline,
+    };
+
+    env.storage()
+        .persistent()
+        .set(&GovernanceDataKey::Proposal(new_id), &proposal);
+    env.storage()
+        .instance()
+        .set(&GovernanceDataKey::ProposalCount, &new_id);
+
+    GovernanceEvents::proposal_created(env, new_id, &proposer, &config_key, &config_value);
+
+    new_id
+}
+
+pub fn vote_proposal(env: &Env, voter: Address, proposal_id: u32) {
+    voter.require_auth();
+
+    let mut proposal: Proposal = env
+        .storage()
+        .persistent()
+        .get(&GovernanceDataKey::Proposal(proposal_id))
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::ProposalNotFound));
+
+    if proposal.executed {
+        panic_with_error!(env, GovernanceError::AlreadyExecuted);
+    }
+
+    if env.ledger().timestamp() > proposal.deadline {
+        panic_with_error!(env, GovernanceError::ProposalExpired);
+    }
+
+    let vote_key = GovernanceDataKey::UserVote(proposal_id, voter.clone());
+    let has_voted: bool = env.storage().persistent().get(&vote_key).unwrap_or(false);
+
+    if has_voted {
+        panic_with_error!(env, GovernanceError::AlreadyVoted);
+    }
+
+    env.storage().persistent().set(&vote_key, &true);
+    proposal.approvals = proposal
+        .approvals
+        .checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::Overflow));
+    env.storage()
+        .persistent()
+        .set(&GovernanceDataKey::Proposal(proposal_id), &proposal);
+
+    GovernanceEvents::voted(env, proposal_id, &voter);
+}
+
+pub fn execute_proposal(env: &Env, caller: Address, proposal_id: u32) {
+    caller.require_auth();
+
+    let mut proposal: Proposal = env
+        .storage()
+        .persistent()
+        .get(&GovernanceDataKey::Proposal(proposal_id))
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::ProposalNotFound));
+
+    if proposal.executed {
+        panic_with_error!(env, GovernanceError::AlreadyExecuted);
+    }
+
+    if env.ledger().timestamp() > proposal.deadline {
+        panic_with_error!(env, GovernanceError::ProposalExpired);
+    }
+
+    let required_approvals: u32 = env
+        .storage()
+        .instance()
+        .get(&GovernanceDataKey::RequiredApprovals)
+        .unwrap_or_else(|| panic_with_error!(env, GovernanceError::NotInitialized));
+
+    if proposal.approvals < required_approvals {
+        panic_with_error!(env, GovernanceError::NotEnoughApprovals);
+    }
+
+    env.storage().persistent().set(
+        &GovernanceDataKey::ConfigValue(proposal.config_key.clone()),
+        &proposal.config_value,
+    );
+
+    proposal.executed = true;
+    env.storage()
+        .persistent()
+        .set(&GovernanceDataKey::Proposal(proposal_id), &proposal);
+
+    GovernanceEvents::proposal_executed(
+        env,
+        proposal_id,
+        &proposal.config_key,
+        &proposal.config_value,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Contract
+// ---------------------------------------------------------------------------
+
+#[contract]
+pub struct GovernanceContract;
+
+#[contractimpl]
+impl GovernanceContract {
+    pub fn initialize(env: Env, admin: Address, required_approvals: u32) {
+        initialize_governance(&env, admin, required_approvals);
+    }
+
+    pub fn update_admin(env: Env, current_admin: Address, new_admin: Address) {
+        update_admin(&env, current_admin, new_admin);
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&GovernanceDataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, GovernanceError::NotInitialized))
+    }
+
+    pub fn create_proposal(
+        env: Env,
+        proposer: Address,
+        config_key: String,
+        config_value: String,
+        duration_seconds: u64,
+    ) -> u32 {
+        create_proposal(&env, proposer, config_key, config_value, duration_seconds)
+    }
+
+    pub fn vote_proposal(env: Env, voter: Address, proposal_id: u32) {
+        vote_proposal(&env, voter, proposal_id);
+    }
+
+    pub fn execute_proposal(env: Env, caller: Address, proposal_id: u32) {
+        execute_proposal(&env, caller, proposal_id);
+    }
+
+    pub fn get_proposal(env: Env, proposal_id: u32) -> Option<Proposal> {
+        env.storage()
+            .persistent()
+            .get(&GovernanceDataKey::Proposal(proposal_id))
+    }
+
+    pub fn get_config(env: Env, config_key: String) -> Option<String> {
+        env.storage()
+            .persistent()
+            .get(&GovernanceDataKey::ConfigValue(config_key))
+    }
+
+    /// Validates whether a proposal has passed (enough approvals, not expired, not executed).
+    /// Returns `true` if the proposal can be used to authorize an action, `false` otherwise.
+    /// This is designed to be called from other contracts (e.g., contract-upgrade) via
+    /// cross-contract invocation.
+    pub fn is_proposal_valid(env: Env, proposal_id: u32) -> bool {
+        is_proposal_valid(&env, proposal_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger as _},
+        Address, Env, String,
+    };
+
+    fn setup() -> (Env, Address, GovernanceContractClient<'static>) {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().with_mut(|li| {
+            li.timestamp = 1000;
+        });
+
+        let contract_id = env.register(GovernanceContract, ());
+        let client = GovernanceContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        client.initialize(&admin, &2);
+        (env, admin, client)
+    }
+
+    #[test]
+    fn test_proposal_lifecycle_create_vote_execute() {
+        let (env, _admin, client) = setup();
+
+        let proposer = Address::generate(&env);
+        let voter1 = Address::generate(&env);
+        let voter2 = Address::generate(&env);
+        let key = String::from_str(&env, "max_fee");
+        let val = String::from_str(&env, "100");
+
+        let prop_id = client.create_proposal(&proposer, &key, &val, &86400);
+        assert_eq!(prop_id, 1);
+
+        client.vote_proposal(&voter1, &prop_id);
+        client.vote_proposal(&voter2, &prop_id);
+        client.execute_proposal(&voter1, &prop_id);
+
+        let proposal = client.get_proposal(&prop_id).unwrap();
+        assert!(proposal.executed);
+        assert_eq!(client.get_config(&key).unwrap(), val);
+    }
+
+    #[test]
+    fn test_is_proposal_valid() {
+        let (env, _admin, client) = setup();
+
+        let proposer = Address::generate(&env);
+        let voter1 = Address::generate(&env);
+        let voter2 = Address::generate(&env);
+        let key = String::from_str(&env, "fee_rate");
+        let val = String::from_str(&env, "500");
+
+        let prop_id = client.create_proposal(&proposer, &key, &val, &86400);
+
+        // Not yet enough approvals
+        client.vote_proposal(&voter1, &prop_id);
+        // Still only 1 approval, needs 2
+        assert!(!client.is_proposal_valid(&prop_id));
+
+        // Now has enough approvals
+        client.vote_proposal(&voter2, &prop_id);
+        assert!(client.is_proposal_valid(&prop_id));
+
+        // Execute the proposal (on governance side, this updates config and marks as executed)
+        client.execute_proposal(&voter1, &prop_id);
+        assert!(!client.is_proposal_valid(&prop_id));
+    }
+
+    #[test]
+    fn test_is_proposal_valid_after_deadline() {
+        let (env, _admin, client) = setup();
+
+        let proposer = Address::generate(&env);
+        let voter1 = Address::generate(&env);
+        let voter2 = Address::generate(&env);
+        let key = String::from_str(&env, "fee_rate");
+        let val = String::from_str(&env, "500");
+        let duration = 3600_u64;
+
+        let prop_id = client.create_proposal(&proposer, &key, &val, &duration);
+        client.vote_proposal(&voter1, &prop_id);
+        client.vote_proposal(&voter2, &prop_id);
+
+        assert!(client.is_proposal_valid(&prop_id));
+
+        // Advance past deadline
+        env.ledger().with_mut(|li| {
+            li.timestamp += duration + 1;
+        });
+
+        assert!(!client.is_proposal_valid(&prop_id));
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #8)")]
+    fn test_unauthorized_execution_without_enough_approvals() {
+        let (env, _admin, client) = setup();
+
+        let proposer = Address::generate(&env);
+        let voter = Address::generate(&env);
+        let key = String::from_str(&env, "max_fee");
+        let val = String::from_str(&env, "100");
+
+        let prop_id = client.create_proposal(&proposer, &key, &val, &86400);
+        client.vote_proposal(&voter, &prop_id);
+        client.execute_proposal(&proposer, &prop_id);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #6)")]
+    fn test_unauthorized_execution_after_deadline() {
+        let (env, _admin, client) = setup();
+
+        let proposer = Address::generate(&env);
+        let voter1 = Address::generate(&env);
+        let voter2 = Address::generate(&env);
+        let key = String::from_str(&env, "max_fee");
+        let val = String::from_str(&env, "100");
+        let duration = 3600_u64;
+
+        let prop_id = client.create_proposal(&proposer, &key, &val, &duration);
+        client.vote_proposal(&voter1, &prop_id);
+        client.vote_proposal(&voter2, &prop_id);
+
+        env.ledger().with_mut(|li| {
+            li.timestamp += duration + 1;
+        });
+
+        client.execute_proposal(&voter1, &prop_id);
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #7)")]
+    fn test_unauthorized_execution_already_executed() {
+        let (env, _admin, client) = setup();
+
+        let proposer = Address::generate(&env);
+        let voter1 = Address::generate(&env);
+        let voter2 = Address::generate(&env);
+        let key = String::from_str(&env, "max_fee");
+        let val = String::from_str(&env, "100");
+
+        let prop_id = client.create_proposal(&proposer, &key, &val, &86400);
+        client.vote_proposal(&voter1, &prop_id);
+        client.vote_proposal(&voter2, &prop_id);
+        client.execute_proposal(&voter1, &prop_id);
+        client.execute_proposal(&voter2, &prop_id);
+    }
+}

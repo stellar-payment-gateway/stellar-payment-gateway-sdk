@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Stellar Payment Gateway SDK logo">
+  <defs>
+    <linearGradient id="tile" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#12233f"/>
+      <stop offset="100%" stop-color="#0a1428"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4cc9f0"/>
+      <stop offset="100%" stop-color="#4361ee"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#72efdd"/>
+      <stop offset="100%" stop-color="#4cc9f0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4cc9f0" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#4cc9f0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="url(#tile)" stroke="url(#ring)" stroke-width="4"/>
+
+  <circle cx="256" cy="256" r="200" fill="url(#glow)"/>
+  <circle cx="256" cy="256" r="120" fill="none" stroke="url(#ring)" stroke-width="22"/>
+  <circle cx="256" cy="256" r="148" fill="none" stroke="#4cc9f0" stroke-opacity="0.22" stroke-width="3"/>
+
+  <!-- payment arrow through the gateway -->
+  <path d="M 156 356 L 356 172" fill="none" stroke="url(#arrow)" stroke-width="26" stroke-linecap="round"/>
+  <path d="M 356 172 L 356 248 M 356 172 L 280 172" stroke="#12233f" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <circle cx="156" cy="356" r="18" fill="#72efdd"/>
+  <path d="M 356 172 l 16 -42 l 42 16 z" fill="#4cc9f0"/>
+
+  <circle cx="132" cy="132" r="8" fill="#72efdd" opacity="0.9"/>
+  <circle cx="392" cy="392" r="6" fill="#4cc9f0" opacity="0.8"/>
+</svg>
