@@ -35,11 +35,17 @@ fn set_ledger_info(env: &Env, ts: u64) {
 }
 
 fn cpu_instructions(env: &Env) -> u64 {
-    env.cost_estimate().budget().cpu_instruction_cost()
+    env.budget().cpu_instruction_cost()
 }
 
 fn mem_bytes(env: &Env) -> u64 {
-    env.cost_estimate().budget().memory_bytes_cost()
+    env.budget().memory_bytes_cost()
+}
+
+/// Resets the tracked budget so subsequent calls can be measured in isolation.
+fn reset_budget(env: &Env) {
+    let mut budget = env.budget();
+    budget.reset_default();
 }
 
 fn print_metrics(name: &str, cpu: u64, mem: u64) {
@@ -78,7 +84,7 @@ fn benchmark_budget_creation() {
 
     client.initialize(&admin);
 
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     let cpu_before = cpu_instructions(&env);
     let mem_before = mem_bytes(&env);
 
@@ -110,7 +116,7 @@ fn benchmark_spending_validation() {
     client.update_budget(&admin, &user, &5000i128, &None);
     client.set_category_budget(&admin, &user, &category, &1000i128);
 
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     let cpu_before = cpu_instructions(&env);
     let mem_before = mem_bytes(&env);
 
@@ -159,7 +165,7 @@ fn benchmark_goal_creation() {
 
     let requests = vec![&env, request];
 
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     let cpu_before = cpu_instructions(&env);
     let mem_before = mem_bytes(&env);
 
@@ -206,7 +212,7 @@ fn benchmark_goal_contribution() {
     let result = client.batch_set_savings_goals(&admin, &vec![&env, request]);
     let goal_id = first_goal_id(result.results.get(0).unwrap());
 
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     let cpu_before = cpu_instructions(&env);
     let mem_before = mem_bytes(&env);
 
@@ -249,7 +255,7 @@ fn benchmark_goal_withdrawal() {
     let result = client.batch_set_savings_goals(&admin, &vec![&env, request]);
     let goal_id = first_goal_id(result.results.get(0).unwrap());
 
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     let cpu_before = cpu_instructions(&env);
     let mem_before = mem_bytes(&env);
 
@@ -280,12 +286,12 @@ fn benchmark_event_emission_overhead() {
     client.initialize(&admin);
 
     // Measure first call (includes storage setup)
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     client.update_budget(&admin, &user, &100i128, &None);
     let _ = cpu_instructions(&env);
 
     // Measure second call (mostly event emission and small update)
-    env.cost_estimate().budget().reset_default();
+    reset_budget(&env);
     let cpu_before = cpu_instructions(&env);
     let mem_before = mem_bytes(&env);
     client.update_budget(&admin, &user, &200i128, &None);

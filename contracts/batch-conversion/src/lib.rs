@@ -445,7 +445,7 @@ impl BatchConversionContract {
             .storage()
             .persistent()
             .get(&DataKey::Rate(request.from_asset.clone(), request.to_asset.clone()))
-            .ok_or(9)?; // RateNotFound
+            .ok_or(9u32)?; // RateNotFound
 
         // amount_out = amount_in * rate_numerator / rate_denominator (checked)
         let amount_out = match request

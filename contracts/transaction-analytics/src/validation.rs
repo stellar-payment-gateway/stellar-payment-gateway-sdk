@@ -49,7 +49,11 @@ pub fn validate_amounts(amounts: &[i128]) -> Result<(), ValidationError> {
 pub fn validate_transaction(transaction: &Transaction) -> Result<(), ValidationError> {
     validate_address(&transaction.from)?;
     validate_address(&transaction.to)?;
-    validate_amount(transaction.amount)?;
+
+    // Zero-amount transactions are allowed; negative amounts are not.
+    if transaction.amount < 0 {
+        return Err(ValidationError::InvalidAmount);
+    }
 
     // Validate timestamp is not in the future (within reasonable tolerance)
     let current_ledger = transaction.timestamp; // This would be env.ledger().sequence() in real usage
@@ -325,7 +329,7 @@ mod tests {
         BundledTransaction, RatingInput, RefundRequest, Transaction, TransactionStatus,
         TransactionStatusUpdate,
     };
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{testutils::Address as _, Env, Symbol};
 
     fn create_test_transaction(env: &Env, tx_id: u64, amount: i128, category: &str) -> Transaction {
         Transaction {
@@ -334,7 +338,7 @@ mod tests {
             to: Address::generate(env),
             amount,
             timestamp: 12345,
-            category: symbol_short!(category),
+            category: Symbol::new(env, category),
         }
     }
 
@@ -370,7 +374,7 @@ mod tests {
         let env = Env::default();
         let request = RefundRequest {
             tx_id: 1,
-            reason: Some(symbol_short!("test")),
+            reason: Some(Symbol::new(&env, "test")),
         };
         assert!(validate_refund_request(&request).is_ok());
     }
@@ -380,7 +384,7 @@ mod tests {
         let env = Env::default();
         let request = RefundRequest {
             tx_id: 0,
-            reason: Some(symbol_short!("test")),
+            reason: Some(Symbol::new(&env, "test")),
         };
         assert!(validate_refund_request(&request).is_err());
     }
@@ -446,10 +450,10 @@ mod tests {
 
     #[test]
     fn test_validate_asset_amounts() {
-        let amounts = vec![100, 200, 300];
+        let amounts = [100, 200, 300];
         assert!(validate_asset_amounts("USDC", &amounts).is_ok());
 
-        let invalid_amounts = vec![100, -1, 300]; // Contains negative
+        let invalid_amounts = [100, -1, 300]; // Contains negative
         assert!(validate_asset_amounts("USDC", &invalid_amounts).is_err());
     }
 

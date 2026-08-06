@@ -4,8 +4,9 @@
 
 use crate::{BatchRewardsContract, BatchRewardsContractClient, RewardRequest, RewardResult};
 use soroban_sdk::{
+    symbol_short,
     testutils::{Address as _, Events as _, Ledger},
-    token, Address, Bytes, Env, Vec,
+    token, Address, Bytes, Env, Symbol, TryFromVal, Val, Vec,
 };
 
 /// Creates a test environment with the contract deployed and initialized.
@@ -49,6 +50,11 @@ fn idempotency_token(env: &Env, seed: u8) -> Bytes {
     Bytes::from_array(env, &bytes)
 }
 
+/// Mints `amount` of `token_id` to `to` (admin-issued asset; auth is mocked).
+fn mint_tokens(env: &Env, token_id: &Address, to: &Address, amount: i128) {
+    token::StellarAssetClient::new(env, token_id).mint(to, &amount);
+}
+
 // Initialization Tests
 
 #[test]
@@ -90,7 +96,7 @@ fn test_distribute_rewards_single_recipient() {
     let reward_amount: i128 = 10_000_000; // 1 XLM equivalent
 
     // Mint tokens to admin
-    token_client.mint(&admin, &(reward_amount * 2));
+    mint_tokens(&env, &token, &admin, reward_amount * 2);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(
@@ -121,7 +127,7 @@ fn test_distribute_rewards_multiple_recipients() {
     let amount: i128 = 5_000_000;
 
     // Mint tokens to admin
-    token_client.mint(&admin, &(amount * 3 + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount * 3 + 10_000_000);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient1.clone(), amount));
@@ -151,7 +157,7 @@ fn test_distribute_rewards_partial_failures() {
     let invalid_amount: i128 = -1_000_000; // Invalid amount
 
     // Mint tokens to admin
-    token_client.mint(&admin, &(valid_amount * 2));
+    mint_tokens(&env, &token, &admin, valid_amount * 2);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(
@@ -179,14 +185,14 @@ fn test_distribute_rewards_partial_failures() {
 
 #[test]
 fn test_distribute_rewards_accumulates_stats() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
     let amount: i128 = 5_000_000;
 
     // Mint tokens to admin
-    token_client.mint(&admin, &(amount * 4 + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount * 4 + 10_000_000);
 
     // First batch
     let mut rewards = Vec::new(&env);
@@ -217,13 +223,13 @@ fn test_distribute_rewards_accumulates_stats() {
 
 #[test]
 fn test_distribute_rewards_large_batch() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let amount: i128 = 1_000_000;
     let batch_size = 50u32;
 
     // Mint tokens to admin
-    token_client.mint(&admin, &(amount * batch_size as i128 + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount * batch_size as i128 + 10_000_000);
 
     // Create batch of rewards
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
@@ -241,7 +247,7 @@ fn test_distribute_rewards_large_batch() {
 }
 
 #[test]
-#[should_panic(expected = "EmptyBatch")]
+#[should_panic(expected = "Error(Contract, #4)")]
 fn test_distribute_rewards_empty_batch() {
     let (env, admin, token, _token_client, client) = setup_test_env();
 
@@ -250,15 +256,15 @@ fn test_distribute_rewards_empty_batch() {
 }
 
 #[test]
-#[should_panic(expected = "BatchTooLarge")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_distribute_rewards_batch_too_large() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let amount: i128 = 1_000_000;
     let batch_size = 101u32; // Exceeds MAX_BATCH_SIZE of 100
 
     // Mint tokens to admin
-    token_client.mint(&admin, &(amount * batch_size as i128 + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount * batch_size as i128 + 10_000_000);
 
     // Create oversized batch
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
@@ -271,15 +277,15 @@ fn test_distribute_rewards_batch_too_large() {
 }
 
 #[test]
-#[should_panic(expected = "InsufficientBalance")]
+#[should_panic(expected = "Error(Contract, #7)")]
 fn test_distribute_rewards_insufficient_balance() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient = Address::generate(&env);
     let amount: i128 = 10_000_000;
 
     // Mint only half of what's needed
-    token_client.mint(&admin, &(amount / 2));
+    mint_tokens(&env, &token, &admin, amount / 2);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient, amount));
@@ -288,15 +294,15 @@ fn test_distribute_rewards_insufficient_balance() {
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn test_distribute_rewards_unauthorized() {
-    let (env, _admin, token, token_client, client) = setup_test_env();
+    let (env, _admin, token, _token_client, client) = setup_test_env();
 
     let unauthorized_caller = Address::generate(&env);
     let recipient = Address::generate(&env);
     let amount: i128 = 10_000_000;
 
-    token_client.mint(&unauthorized_caller, &amount);
+    mint_tokens(&env, &token, &unauthorized_caller, amount);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient, amount));
@@ -311,12 +317,12 @@ fn test_distribute_rewards_unauthorized() {
 
 #[test]
 fn test_distribute_rewards_events_emitted() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient = Address::generate(&env);
     let amount: i128 = 10_000_000;
 
-    token_client.mint(&admin, &(amount + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount + 10_000_000);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient.clone(), amount));
@@ -332,7 +338,7 @@ fn test_distribute_rewards_events_emitted() {
         event
             .1
             .iter()
-            .any(|topic: &soroban_sdk::Val| topic.to_string().contains("batch"))
+            .any(|topic: Val| Symbol::try_from_val(&env, &topic) == Ok(symbol_short!("batch")))
     });
     assert!(has_batch_started, "batch_started event not found");
 
@@ -341,7 +347,7 @@ fn test_distribute_rewards_events_emitted() {
         event
             .1
             .iter()
-            .any(|topic: &soroban_sdk::Val| topic.to_string().contains("success"))
+            .any(|topic: Val| Symbol::try_from_val(&env, &topic) == Ok(symbol_short!("success")))
     });
     assert!(has_reward_success, "reward_success event not found");
 
@@ -350,20 +356,20 @@ fn test_distribute_rewards_events_emitted() {
         event
             .1
             .iter()
-            .any(|topic: &soroban_sdk::Val| topic.to_string().contains("completed"))
+            .any(|topic: Val| Symbol::try_from_val(&env, &topic) == Ok(symbol_short!("completed")))
     });
     assert!(has_batch_completed, "batch_completed event not found");
 }
 
 #[test]
-#[should_panic(expected = "DuplicateRequest")]
+#[should_panic(expected = "Error(Contract, #9)")]
 fn test_duplicate_replay_is_rejected() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient = Address::generate(&env);
     let amount: i128 = 10_000_000;
 
-    token_client.mint(&admin, &(amount * 2));
+    mint_tokens(&env, &token, &admin, amount * 2);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient.clone(), amount));
@@ -375,13 +381,13 @@ fn test_duplicate_replay_is_rejected() {
 
 #[test]
 fn test_distribute_rewards_with_zero_amount() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient = Address::generate(&env);
     let valid_amount: i128 = 5_000_000;
     let zero_amount: i128 = 0;
 
-    token_client.mint(&admin, &(valid_amount + 10_000_000));
+    mint_tokens(&env, &token, &admin, valid_amount + 10_000_000);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient.clone(), valid_amount));
@@ -396,12 +402,12 @@ fn test_distribute_rewards_with_zero_amount() {
 
 #[test]
 fn test_distribute_rewards_events_on_failure() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient = Address::generate(&env);
     let invalid_amount: i128 = -5_000_000;
 
-    token_client.mint(&admin, &(10_000_000));
+    mint_tokens(&env, &token, &admin, 10_000_000);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(
@@ -421,21 +427,21 @@ fn test_distribute_rewards_events_on_failure() {
         event
             .1
             .iter()
-            .any(|topic: &soroban_sdk::Val| topic.to_string().contains("failure"))
+            .any(|topic: Val| Symbol::try_from_val(&env, &topic) == Ok(symbol_short!("failure")))
     });
     assert!(has_failure_event, "reward_failure event not found");
 }
 
 #[test]
 fn test_distribute_rewards_result_structure() {
-    let (env, admin, token, token_client, client) = setup_test_env();
+    let (env, admin, token, _token_client, client) = setup_test_env();
 
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
     let amount1: i128 = 5_000_000;
     let amount2: i128 = 3_000_000;
 
-    token_client.mint(&admin, &(amount1 + amount2 + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount1 + amount2 + 10_000_000);
 
     let mut rewards: Vec<RewardRequest> = Vec::new(&env);
     rewards.push_back(create_reward_request(&env, recipient1.clone(), amount1));
@@ -452,16 +458,16 @@ fn test_distribute_rewards_result_structure() {
     // Verify individual results
     match result.results.get(0).unwrap() {
         RewardResult::Success(addr, amt) => {
-            assert_eq!(*addr, recipient1);
-            assert_eq!(*amt, amount1);
+            assert_eq!(addr, recipient1);
+            assert_eq!(amt, amount1);
         }
         _ => panic!("Expected success result"),
     }
 
     match result.results.get(1).unwrap() {
         RewardResult::Success(addr, amt) => {
-            assert_eq!(*addr, recipient2);
-            assert_eq!(*amt, amount2);
+            assert_eq!(addr, recipient2);
+            assert_eq!(amt, amount2);
         }
         _ => panic!("Expected success result"),
     }
@@ -471,12 +477,15 @@ fn test_distribute_rewards_result_structure() {
 fn test_multiple_simultaneous_batch_distributions() {
     let (env, admin, token, token_client, client) = setup_test_env();
 
-    let recipients: Vec<Address> = (0..10).map(|_| Address::generate(&env)).collect::<Vec<_>>();
+    let mut recipients: Vec<Address> = Vec::new(&env);
+    for _ in 0..10 {
+        recipients.push_back(Address::generate(&env));
+    }
 
     let amount: i128 = 2_000_000;
 
     // Mint sufficient tokens
-    token_client.mint(&admin, &(amount * 30 + 10_000_000));
+    mint_tokens(&env, &token, &admin, amount * 30 + 10_000_000);
 
     // Execute 3 batches
     for batch_index in 0..3 {

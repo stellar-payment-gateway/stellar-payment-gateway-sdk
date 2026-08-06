@@ -326,11 +326,11 @@ impl TransactionAnalyticsContract {
         }
 
         let page_size = core::cmp::min(page_size, MAX_PAGE_SIZE);
-        let total_count = env
+        let total_count: u32 = env
             .storage()
             .instance()
             .get(&DataKey::LastBatchId)
-            .unwrap_or(0) as u32;
+            .unwrap_or(0u64) as u32;
 
         if total_count == 0 {
             return PaginatedBatchMetrics {
@@ -591,16 +591,14 @@ impl TransactionAnalyticsContract {
         caller.require_auth();
         Self::require_admin(&env, &caller);
 
-        if let Err(validation_error) = validate_bundled_transactions(&bundled_transactions) {
-            match validation_error {
-                ValidationError::EmptyBatch => {
-                    panic_with_error!(&env, AnalyticsError::EmptyBundle)
-                }
-                ValidationError::BatchTooLarge => {
-                    panic_with_error!(&env, AnalyticsError::BundleTooLarge)
-                }
-                _ => panic_with_error!(&env, AnalyticsError::InvalidBatch),
-            }
+        // Only the batch-size limits are hard errors; individual transaction
+        // problems are reported per-item in the validation results so partial
+        // failures can be handled gracefully.
+        if bundled_transactions.is_empty() {
+            panic_with_error!(&env, AnalyticsError::EmptyBundle);
+        }
+        if bundled_transactions.len() > MAX_BATCH_SIZE {
+            panic_with_error!(&env, AnalyticsError::BundleTooLarge);
         }
 
         // FIX: define tx_count before use

@@ -3,10 +3,10 @@
 // Records notification events per user and emits a single digest event once
 // the weekly window has elapsed.
 
-use soroban_sdk::{contracttype, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
 const DIGEST_WINDOW_SECS: u64 = 7 * 24 * 60 * 60; // 7 days
-const PENDING_KEY: Symbol = Symbol::short("dgst_pend");
+const PENDING_KEY: &str = "dgst_pend";
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,12 +28,12 @@ pub struct DigestSummary {
 /// contracts/notification/src/events.rs) to additionally accumulate the
 /// event into the pending weekly digest for the user.
 pub fn record_event(env: &Env, user: &Address, category: Symbol) {
-    let key = (PENDING_KEY, user.clone());
+    let key = (Symbol::new(env, PENDING_KEY), user.clone());
     let mut pending: Vec<DigestEntry> = env
         .storage()
         .persistent()
         .get(&key)
-        .unwrap_or(vec![env]);
+        .unwrap_or(Vec::new(env));
 
     pending.push_back(DigestEntry {
         category,
@@ -48,8 +48,12 @@ pub fn record_event(env: &Env, user: &Address, category: Symbol) {
 /// elapsed since the oldest pending entry, and if so, emit a single digest
 /// event and clear the pending list.
 pub fn emit_digest_if_due(env: &Env, user: &Address) -> Option<DigestSummary> {
-    let key = (PENDING_KEY, user.clone());
-    let pending: Vec<DigestEntry> = env.storage().persistent().get(&key).unwrap_or(vec![env]);
+    let key = (Symbol::new(env, PENDING_KEY), user.clone());
+    let pending: Vec<DigestEntry> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(Vec::new(env));
 
     if pending.is_empty() {
         return None;
@@ -69,7 +73,8 @@ pub fn emit_digest_if_due(env: &Env, user: &Address) -> Option<DigestSummary> {
     };
 
     // Clear the pending list now that it's been digested.
-    env.storage().persistent().set(&key, &vec![env]);
+    let empty: Vec<DigestEntry> = Vec::new(env);
+    env.storage().persistent().set(&key, &empty);
 
     // Emit the digest event for off-chain consumers (indexers, push services).
     env.events().publish(
@@ -87,29 +92,44 @@ pub fn emit_digest_if_due(env: &Env, user: &Address) -> Option<DigestSummary> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::NotificationContract;
     use soroban_sdk::testutils::{Address as _, Ledger};
     use soroban_sdk::{Env, Symbol};
+
+    /// Runs the storage-backed helper under a contract frame (SDK 22
+    /// requires contract-context for persistent storage access in tests).
+    fn with_contract<T>(env: &Env, contract_id: &Address, f: impl FnOnce() -> T) -> T {
+        env.as_contract(contract_id, f)
+    }
 
     #[test]
     fn no_digest_before_window_elapses() {
         let env = Env::default();
+        let contract_id = env.register(NotificationContract, ());
         let user = Address::generate(&env);
 
-        record_event(&env, &user, Symbol::new(&env, "budget_alert"));
-        assert!(emit_digest_if_due(&env, &user).is_none());
+        with_contract(&env, &contract_id, || {
+            record_event(&env, &user, Symbol::new(&env, "budget_alert"));
+        });
+        with_contract(&env, &contract_id, || {
+            assert!(emit_digest_if_due(&env, &user).is_none());
+        });
     }
 
     #[test]
     fn digest_emitted_after_window_elapses() {
         let env = Env::default();
+        let contract_id = env.register(NotificationContract, ());
         let user = Address::generate(&env);
 
-        record_event(&env, &user, Symbol::new(&env, "budget_alert"));
-        record_event(&env, &user, Symbol::new(&env, "savings_milestone"));
+        with_contract(&env, &contract_id, || {
+            record_event(&env, &user, Symbol::new(&env, "budget_alert"));
+            record_event(&env, &user, Symbol::new(&env, "savings_milestone"));
+        });
 
         env.ledger().with_mut(|l| l.timestamp += DIGEST_WINDOW_SECS + 1);
 
-        let summary = emit_digest_if_due(&env, &user);
+        let summary = with_contract(&env, &contract_id, || emit_digest_if_due(&env, &user));
         assert!(summary.is_some());
         assert_eq!(summary.unwrap().event_count, 2);
     }
@@ -117,13 +137,18 @@ mod test {
     #[test]
     fn pending_list_clears_after_digest() {
         let env = Env::default();
+        let contract_id = env.register(NotificationContract, ());
         let user = Address::generate(&env);
 
-        record_event(&env, &user, Symbol::new(&env, "budget_alert"));
+        with_contract(&env, &contract_id, || {
+            record_event(&env, &user, Symbol::new(&env, "budget_alert"));
+        });
         env.ledger().with_mut(|l| l.timestamp += DIGEST_WINDOW_SECS + 1);
 
-        emit_digest_if_due(&env, &user);
-        // Second call immediately after should find nothing pending.
-        assert!(emit_digest_if_due(&env, &user).is_none());
+        with_contract(&env, &contract_id, || {
+            emit_digest_if_due(&env, &user);
+            // Second call immediately after should find nothing pending.
+            assert!(emit_digest_if_due(&env, &user).is_none());
+        });
     }
 }
