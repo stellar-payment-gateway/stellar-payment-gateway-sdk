@@ -1,6 +1,7 @@
 //! Integration tests for the pausable batch transfer contract
 
 #![cfg(test)]
+extern crate std;
 
 use crate::{
     BatchTransferContract, BatchTransferContractClient, BatchTransferError, TransferRequest,

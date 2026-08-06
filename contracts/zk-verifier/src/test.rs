@@ -2,9 +2,10 @@
 //! cryptography (ed25519-dalek) — the same curve the host verifies.
 
 #![cfg(test)]
+extern crate std;
 
 use crate::{ZkVerifierContract, ZkVerifierContractClient};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{testutils::Address as _, Address, Bytes, BytesN, Env};
 
 /// Deploys and initializes the verifier with a fresh prover keypair.
@@ -34,7 +35,11 @@ fn setup(
 fn build_proof(env: &Env, user: &Address, signing_key: &SigningKey, payload: &[u8]) -> Bytes {
     let payload_bytes = Bytes::from_slice(env, payload);
 
-    let mut message = user.to_string().into_bytes();
+    // `user.to_string()` -> strkey bytes, matching the contract's recomputation.
+    let user_str = user.to_string();
+    let mut user_bytes = alloc::vec![0u8; user_str.len() as usize];
+    user_str.copy_into_slice(&mut user_bytes);
+    let mut message = Bytes::from_slice(env, &user_bytes);
     message.append(&payload_bytes);
     let signature = signing_key.sign(&message.to_alloc_vec());
 
@@ -94,9 +99,9 @@ fn tampered_payload_panics() {
     let user = Address::generate(&env);
     let mut proof = build_proof(&env, &user, &signing_key, &[0xca, 0xfe, 0x00, 0x01]);
     // Flip the last payload byte so the signature no longer matches.
-    let mut payload = proof.slice(64, proof.len() - 64);
+    let mut payload = proof.slice(64..proof.len());
     payload.set(0, payload.get(0).unwrap() ^ 0xff);
-    proof = proof.slice(0, 64);
+    proof = proof.slice(0..64);
     proof.append(&payload);
 
     client.verify_spending_proof(&user, &proof);

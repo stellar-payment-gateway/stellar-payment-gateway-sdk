@@ -22,6 +22,7 @@
 //!   treat any invocation error as a failed verification.
 
 #![no_std]
+extern crate alloc;
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN, Env,
@@ -98,14 +99,17 @@ impl ZkVerifierContract {
             return false;
         }
 
-        let signature: BytesN<64> = match proof.slice(0, 64).try_into() {
+        let signature: BytesN<64> = match proof.slice(0..64).try_into() {
             Ok(sig) => sig,
             Err(_) => return false,
         };
-        let payload = proof.slice(64, proof.len() - 64);
+        let payload = proof.slice(64..proof.len());
 
         // Bind the proof to the user so it cannot be replayed for someone else.
-        let mut message = user.to_string().into_bytes();
+        let user_str = user.to_string();
+        let mut user_bytes = alloc::vec![0u8; user_str.len() as usize];
+        user_str.copy_into_slice(&mut user_bytes);
+        let mut message = Bytes::from_slice(&env, &user_bytes);
         message.append(&payload);
 
         // Panics on an invalid signature; callers observe this as a failed

@@ -1,6 +1,7 @@
 //! Integration tests for cross-contract interactions
 
 #![cfg(test)]
+extern crate std;
 
 use crate::{
     types::{CallResult, CrossContractCall, MAX_BATCH_CALLS},

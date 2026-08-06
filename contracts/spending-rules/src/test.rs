@@ -1,7 +1,8 @@
 #![cfg(test)]
+extern crate alloc;
 
 use crate::{RuleDecision, SpendingRulesContract, SpendingRulesContractClient};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger},
@@ -85,7 +86,11 @@ fn setup() -> TestHarness {
 fn valid_proof(env: &Env, user: &Address, signing_key: &SigningKey) -> Bytes {
     let payload = Bytes::from_slice(env, &[0x01u8, 0x02, 0x03, 0x04]);
 
-    let mut message = user.to_string().into_bytes();
+    // `user.to_string()` -> strkey bytes, matching the verifier contract.
+    let user_str = user.to_string();
+    let mut user_bytes = alloc::vec![0u8; user_str.len() as usize];
+    user_str.copy_into_slice(&mut user_bytes);
+    let mut message = Bytes::from_slice(env, &user_bytes);
     message.append(&payload);
     let signature = signing_key.sign(&message.to_alloc_vec());
 

@@ -9,6 +9,7 @@
 //! - Policy replacement: atomicity and invalidation of pending approvals.
 
 #![cfg(test)]
+extern crate std;
 
 use crate::{
     ApprovalOutcome, EvaluationResult, PolicyRule, RejectionReason, SpendingPolicyContract,
