@@ -1,6 +1,6 @@
 //! # Batch Budget Updates Tests
 
-use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, Vec};
 
 #[cfg(test)]
 mod tests {
@@ -30,15 +30,13 @@ mod tests {
         assert_eq!(requests.len(), 2);
 
         // Test basic validation logic
-        for (user, amount) in requests.iter() {
+        for (_user, amount) in requests.iter() {
             assert!(amount > 0i128, "Amount should be positive");
         }
     }
 
     #[test]
     fn test_validation_logic() {
-        let env = Env::default();
-
         // Test amount validation
         assert!(1000i128 > 0, "Positive amount should be valid");
         assert!(-500i128 <= 0, "Negative amount should be invalid");
@@ -59,6 +57,9 @@ mod tests {
     #[test]
     fn test_event_structure() {
         let env = Env::default();
+        // SDK 22 default ledger timestamp is 0; set a realistic value so
+        // timestamp assertions are deterministic.
+        env.ledger().set_timestamp(1_700_000_000);
 
         // Test that we can create events (basic structure test)
         let admin = Address::generate(&env);
@@ -67,6 +68,7 @@ mod tests {
         let timestamp = env.ledger().timestamp();
 
         // Verify event data structure
+        let _ = (admin, user); // used for structure validation
         assert_eq!(amount, 1000i128);
         assert!(timestamp > 0, "Timestamp should be positive");
     }

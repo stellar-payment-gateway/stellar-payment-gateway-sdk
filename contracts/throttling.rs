@@ -80,14 +80,6 @@ pub enum ThrottleReason {
     SystemDisabled = 4,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TimeWindow {
-    OneMinute = 60,
-    FiveMinutes = 300,
-    OneHour = 3600,
-    OneDay = 86400,
-}
-
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -553,8 +545,7 @@ fn maybe_cleanup_old_data(env: &Env, current_time: u64) {
 }
 
 fn cleanup_old_data(env: &Env, current_time: u64) {
-    let config = get_throttle_config(env);
-    let mut cleaned_wallets = 0u32;
+    let cleaned_wallets = 0u32;
 
     // This is a simplified cleanup - in production, you'd need a way to iterate
     // through all wallet states and clean up expired ones

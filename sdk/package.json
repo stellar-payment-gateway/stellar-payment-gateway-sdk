@@ -1,0 +1,43 @@
+{
+  "name": "stellar-payment-gateway-js",
+  "version": "1.0.0",
+  "description": "TypeScript client SDK for the Stellar Payment Gateway contracts. Wraps the on-chain Soroban contracts (batch conversion, fee engine, wallet status, ZK proof verifier) behind typed, ergonomic clients.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "payment-gateway",
+    "blockchain",
+    "smart-contracts"
+  ],
+  "dependencies": {
+    "@stellar/stellar-sdk": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
