@@ -1,6 +1,6 @@
 //! # Batch Budget Updates Tests
 
-use soroban_sdk::{Address, Env, Vec};
+use soroban_sdk::{testutils::Address as _, Address, Env, Vec};
 
 #[cfg(test)]
 mod tests {
@@ -31,7 +31,7 @@ mod tests {
 
         // Test basic validation logic
         for (user, amount) in requests.iter() {
-            assert!(amount > &0i128, "Amount should be positive");
+            assert!(amount > 0i128, "Amount should be positive");
         }
     }
 
