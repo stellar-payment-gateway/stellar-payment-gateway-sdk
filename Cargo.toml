@@ -41,6 +41,7 @@ members = [
     "contracts/transaction-validation",
     "contracts/merchant-tagging",
     "contracts/currency-conversion",
+    "contracts/budget",
     "contracts/benchmarks",
     "contracts/zk-verifier",
     "contracts/pausable",
