@@ -5,7 +5,7 @@
 use crate::{Notification, NotificationContract, NotificationContractClient};
 use soroban_sdk::{
     testutils::{Address as _, Events as _, Ledger},
-    Address, Env, IntoVal, String, Symbol, Val, Vec,
+    Address, Env, String, Symbol, TryFromVal, Vec,
 };
 
 const WEEK: u64 = 7 * 24 * 60 * 60;
@@ -44,10 +44,12 @@ fn sends_valid_batch_and_emits_events() {
         "recipient should be preserved"
     );
 
-    let expected: Val = Symbol::new(&env, "notification_sent").into_val(&env);
+    let expected = Symbol::new(&env, "notification_sent");
     let events = env.events().all();
     assert!(
-        events.iter().any(|e| e.topics().get(0).unwrap() == expected),
+        events.iter().any(|e| {
+            Symbol::try_from_val(&env, &e.1.get(0).unwrap()) == Ok(expected.clone())
+        }),
         "a notification_sent event should be emitted"
     );
 }
@@ -109,10 +111,12 @@ fn budget_alert_events_are_emitted() {
 
     client.update_budget(&80, &100);
 
-    let expected: Val = String::from_str(&env, "budget").into_val(&env);
+    let expected = String::from_str(&env, "budget");
     let events = env.events().all();
     assert!(
-        events.iter().any(|e| e.topics().get(0).unwrap() == expected),
+        events.iter().any(|e| {
+            String::try_from_val(&env, &e.1.get(0).unwrap()) == Ok(expected.clone())
+        }),
         "a budget event should be emitted"
     );
 }
