@@ -122,7 +122,7 @@ pub fn assert_period_due(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{contract, contractimpl, Env};
+    use soroban_sdk::{contract, contractimpl, testutils::Ledger, Env};
 
     #[contract]
     struct TestContract;

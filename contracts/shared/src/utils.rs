@@ -93,7 +93,7 @@ mod tests {
         generate_transaction_reference_id, increment_counter, validate_amount,
         validate_user_address, ValidationError,
     };
-    use soroban_sdk::{contract, contractimpl, Env, String, Symbol};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Env, String, Symbol};
 
     #[contract]
     struct TestContract;

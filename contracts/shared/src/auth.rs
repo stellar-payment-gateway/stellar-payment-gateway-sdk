@@ -143,7 +143,7 @@ pub fn require_owner_or_operator(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{contract, contractimpl, Env};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _, Env};
 
     #[contract]
     struct TestContract;
@@ -274,22 +274,28 @@ mod tests {
 
     #[test]
     fn require_owner_ok_when_caller_is_owner() {
-        let env = Env::default();
+        let (env, id) = setup();
         env.mock_all_auths();
         let addr = Address::generate(&env);
-        assert!(require_owner(&addr, &addr).is_ok());
+        // `require_auth` needs an active contract frame.
+        env.as_contract(&id, || {
+            assert!(require_owner(&addr, &addr).is_ok());
+        });
     }
 
     #[test]
     fn require_owner_unauthorized_for_different_address() {
-        let env = Env::default();
+        let (env, id) = setup();
         env.mock_all_auths();
         let caller = Address::generate(&env);
         let owner = Address::generate(&env);
-        assert_eq!(
-            require_owner(&caller, &owner),
-            Err(SharedError::Unauthorized)
-        );
+        // `require_auth` needs an active contract frame.
+        env.as_contract(&id, || {
+            assert_eq!(
+                require_owner(&caller, &owner),
+                Err(SharedError::Unauthorized)
+            );
+        });
     }
 
     // --- grant_operator / revoke_operator / is_operator ---
@@ -339,9 +345,13 @@ mod tests {
         env.mock_all_auths();
         let admin = Address::generate(&env);
         let op = Address::generate(&env);
+        // `require_auth` may only be invoked once per address per contract
+        // frame (SDK 22), so grant and revoke run in separate frames.
         env.as_contract(&id, || {
             store_admin(&env, &admin);
             grant_operator(&env, &admin, &op).unwrap();
+        });
+        env.as_contract(&id, || {
             revoke_operator(&env, &admin, &op).unwrap();
             assert!(!is_operator(&env, &op));
         });

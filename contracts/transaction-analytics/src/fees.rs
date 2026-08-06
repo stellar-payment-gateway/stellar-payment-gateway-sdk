@@ -70,11 +70,11 @@ pub fn distribute_fee(env: &Env, fee_amount: i128, shares: &Vec<FeeRecipientShar
 
 /// Calculates fees for a single transaction based on the current fee configuration.
 pub fn calculate_transaction_fee(
-    _env: &Env,
+    env: &Env,
     amount: i128,
     fee_config: &FeeConfig,
 ) -> FeeCalculationResult {
-    if amount <= 0 {
+    if amount <= 0 || is_fee_paused(env) {
         return FeeCalculationResult {
             gross_amount: amount,
             fee_amount: 0,
@@ -322,7 +322,18 @@ pub fn update_operation_fee_config(
 mod tests {
     use super::*;
     use crate::types::{FeeModel, FeeTier};
-    use soroban_sdk::{testutils::Address as _, Env};
+    use soroban_sdk::{
+        symbol_short,
+        testutils::{Address as _, Events},
+        TryFromVal, Val, Env,
+    };
+
+    /// `calculate_transaction_fee` consults the fee-pause flag in storage, so
+    /// pure-calculation tests must run under a contract frame.
+    fn with_frame<T>(env: &Env, f: impl FnOnce() -> T) -> T {
+        let contract_id = env.register(crate::TransactionAnalyticsContract, ());
+        env.as_contract(&contract_id, f)
+    }
 
     #[test]
     fn test_flat_fee_calculation() {
@@ -335,10 +346,12 @@ mod tests {
             description: None,
         };
 
-        let result = calculate_transaction_fee(&env, 1000, &config);
-        assert_eq!(result.gross_amount, 1000);
-        assert_eq!(result.fee_amount, 100);
-        assert_eq!(result.net_amount, 900);
+        with_frame(&env, || {
+            let result = calculate_transaction_fee(&env, 1000, &config);
+            assert_eq!(result.gross_amount, 1000);
+            assert_eq!(result.fee_amount, 100);
+            assert_eq!(result.net_amount, 900);
+        });
     }
 
     #[test]
@@ -352,10 +365,12 @@ mod tests {
             description: None,
         };
 
-        let result = calculate_transaction_fee(&env, 1000, &config);
-        assert_eq!(result.gross_amount, 1000);
-        assert_eq!(result.fee_amount, 5);
-        assert_eq!(result.net_amount, 995);
+        with_frame(&env, || {
+            let result = calculate_transaction_fee(&env, 1000, &config);
+            assert_eq!(result.gross_amount, 1000);
+            assert_eq!(result.fee_amount, 5);
+            assert_eq!(result.net_amount, 995);
+        });
     }
 
     #[test]
@@ -369,11 +384,13 @@ mod tests {
             description: None,
         };
 
-        let result = calculate_transaction_fee(&env, 50, &config);
-        assert_eq!(result.fee_amount, 10);
+        with_frame(&env, || {
+            let result = calculate_transaction_fee(&env, 50, &config);
+            assert_eq!(result.fee_amount, 10);
 
-        let result = calculate_transaction_fee(&env, 1_000_000, &config);
-        assert_eq!(result.fee_amount, 100);
+            let result = calculate_transaction_fee(&env, 1_000_000, &config);
+            assert_eq!(result.fee_amount, 100);
+        });
     }
 
     #[test]
@@ -387,13 +404,15 @@ mod tests {
             description: None,
         };
 
-        let result = calculate_transaction_fee(&env, 0, &config);
-        assert_eq!(result.fee_amount, 0);
-        assert_eq!(result.net_amount, 0);
+        with_frame(&env, || {
+            let result = calculate_transaction_fee(&env, 0, &config);
+            assert_eq!(result.fee_amount, 0);
+            assert_eq!(result.net_amount, 0);
 
-        let result = calculate_transaction_fee(&env, -100, &config);
-        assert_eq!(result.fee_amount, 0);
-        assert_eq!(result.net_amount, -100);
+            let result = calculate_transaction_fee(&env, -100, &config);
+            assert_eq!(result.fee_amount, 0);
+            assert_eq!(result.net_amount, -100);
+        });
     }
 
     #[test]
@@ -419,11 +438,13 @@ mod tests {
             description: None,
         };
 
-        let result = calculate_transaction_fee(&env, 50, &config);
-        assert_eq!(result.fee_amount, 0);
+        with_frame(&env, || {
+            let result = calculate_transaction_fee(&env, 50, &config);
+            assert_eq!(result.fee_amount, 0);
 
-        let result = calculate_transaction_fee(&env, 200, &config);
-        assert_eq!(result.fee_amount, 1);
+            let result = calculate_transaction_fee(&env, 200, &config);
+            assert_eq!(result.fee_amount, 1);
+        });
     }
 
     #[test]
@@ -470,37 +491,58 @@ mod tests {
                 share_bps: 4000,
             },
         ];
-        let shares_vec = Vec::from_array(&env, &shares);
-        distribute_fee(&env, 1000, &shares_vec);
+        let shares_vec = Vec::from_array(&env, shares);
+        // Events published outside a contract frame carry no contract id and
+        // are filtered out by testutils::Events::all, so run the distribution
+        // under the contract's own frame.
+        let contract_id = env.register(crate::TransactionAnalyticsContract, ());
+        env.as_contract(&contract_id, || {
+            distribute_fee(&env, 1000, &shares_vec);
+        });
+        // The fee_distributed topics are (fee, distro, recipient); the
+        // recipient is the third topic element.
         let events = env.events().all();
-        assert!(events.iter().any(|e| e.topics().contains(&r1)));
-        assert!(events.iter().any(|e| e.topics().contains(&r2)));
+        let is_fee_distro_for = |env: &Env, e: &(Address, Vec<Val>, Val), recipient: &Address| {
+            let topics = &e.1;
+            Symbol::try_from_val(env, &topics.get(0).unwrap()) == Ok(symbol_short!("fee"))
+                && Symbol::try_from_val(env, &topics.get(1).unwrap()) == Ok(symbol_short!("distro"))
+                && matches!(
+                    Address::try_from_val(env, &topics.get(2).unwrap()),
+                    Ok(ref a) if a == recipient
+                )
+        };
+        assert!(events.iter().any(|e| is_fee_distro_for(&env, &e, &r1)));
+        assert!(events.iter().any(|e| is_fee_distro_for(&env, &e, &r2)));
     }
 
     #[test]
     fn test_fee_pausing_mechanism() {
         let env = Env::default();
         let admin = Address::generate(&env);
-        env.storage().instance().set(&DataKey::Admin, &admin);
+        let contract_id = env.register(crate::TransactionAnalyticsContract, ());
 
-        let config = FeeConfig {
-            fee_model: FeeModel::Percentage(100),
-            min_fee: None,
-            max_fee: None,
-            enabled: true,
-            description: None,
-        };
-        store_fee_config(&env, &config).unwrap();
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&DataKey::Admin, &admin);
 
-        let result = calculate_transaction_fee(&env, 10000, &config);
-        assert_eq!(result.fee_amount, 100);
+            let config = FeeConfig {
+                fee_model: FeeModel::Percentage(100),
+                min_fee: None,
+                max_fee: None,
+                enabled: true,
+                description: None,
+            };
+            store_fee_config(&env, &config).unwrap();
 
-        set_fee_paused(&env, &admin, true).unwrap();
-        let result_paused = calculate_transaction_fee(&env, 10000, &config);
-        assert_eq!(result_paused.fee_amount, 0);
+            let result = calculate_transaction_fee(&env, 10000, &config);
+            assert_eq!(result.fee_amount, 100);
 
-        set_fee_paused(&env, &admin, false).unwrap();
-        let result_resumed = calculate_transaction_fee(&env, 10000, &config);
-        assert_eq!(result_resumed.fee_amount, 100);
+            set_fee_paused(&env, &admin, true).unwrap();
+            let result_paused = calculate_transaction_fee(&env, 10000, &config);
+            assert_eq!(result_paused.fee_amount, 0);
+
+            set_fee_paused(&env, &admin, false).unwrap();
+            let result_resumed = calculate_transaction_fee(&env, 10000, &config);
+            assert_eq!(result_resumed.fee_amount, 100);
+        });
     }
 }

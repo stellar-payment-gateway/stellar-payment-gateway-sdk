@@ -128,7 +128,7 @@ pub fn validate_bytes_not_empty(b: &Bytes) -> Result<(), SharedError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::{contract, contractimpl, Bytes, Env, String, Vec};
+    use soroban_sdk::{contract, contractimpl, testutils::{Address as _, Ledger}, Bytes, Env, String, Vec};
 
     #[contract]
     struct TestContract;

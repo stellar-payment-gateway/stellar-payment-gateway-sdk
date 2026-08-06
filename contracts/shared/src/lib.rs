@@ -75,8 +75,9 @@ mod tests {
     #[test]
     fn returns_shared_version() {
         let env = Env::default();
-        let version = get_version(env);
-        assert_eq!(version, String::from_str(&Env::default(), "1.0.0"));
+        let version = get_version(env.clone());
+        // Build the expected value on the same Env (comparing across Hosts panics).
+        assert_eq!(version, String::from_str(&env, "1.0.0"));
     }
 
     #[test]

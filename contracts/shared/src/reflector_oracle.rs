@@ -122,7 +122,8 @@ impl PriceOracle for ReflectorOracle {
 mod test {
     use super::*;
     use soroban_sdk::{
-        contract, contractimpl, contracttype, testutils::Address as _, Env, String,
+        contract, contractimpl, contracttype, testutils::{Address as _, Ledger}, Env,
+        String,
     };
 
     #[contracttype]
@@ -177,6 +178,10 @@ mod test {
 
     fn setup() -> (Env, Address, ReflectorOracle) {
         let env = Env::default();
+        // Pin the ledger timestamp so staleness assertions are deterministic:
+        // the SDK's default test timestamp is 0, which would make any "past"
+        // observation saturate to the same value and look fresh.
+        env.ledger().with_mut(|li| li.timestamp = 1_000_000);
         let mock_id = env.register(MockOracleContract, ());
         let client = MockOracleContractClient::new(&env, &mock_id);
         client.initialize();

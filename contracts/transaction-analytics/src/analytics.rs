@@ -721,21 +721,30 @@ mod tests {
         }
     }
 
+    /// `compute_batch_metrics`/`compute_category_metrics` consult the fee
+    /// configuration in storage, so they must run under a contract frame.
+    fn with_frame<T>(env: &Env, f: impl FnOnce() -> T) -> T {
+        let contract_id = env.register(crate::TransactionAnalyticsContract, ());
+        env.as_contract(&contract_id, f)
+    }
+
     #[test]
     fn test_compute_batch_metrics_single_tx() {
         let env = Env::default();
         let mut transactions: Vec<Transaction> = Vec::new(&env);
         transactions.push_back(create_test_transaction(&env, 1, 1000, "transfer"));
 
-        let metrics = compute_batch_metrics(&env, &transactions, 100);
+        with_frame(&env, || {
+            let metrics = compute_batch_metrics(&env, &transactions, 100);
 
-        assert_eq!(metrics.tx_count, 1);
-        assert_eq!(metrics.total_volume, 1000);
-        assert_eq!(metrics.avg_amount, 1000);
-        assert_eq!(metrics.min_amount, 1000);
-        assert_eq!(metrics.max_amount, 1000);
-        assert_eq!(metrics.unique_senders, 1);
-        assert_eq!(metrics.unique_recipients, 1);
+            assert_eq!(metrics.tx_count, 1);
+            assert_eq!(metrics.total_volume, 1000);
+            assert_eq!(metrics.avg_amount, 1000);
+            assert_eq!(metrics.min_amount, 1000);
+            assert_eq!(metrics.max_amount, 1000);
+            assert_eq!(metrics.unique_senders, 1);
+            assert_eq!(metrics.unique_recipients, 1);
+        });
     }
 
     #[test]
@@ -746,13 +755,15 @@ mod tests {
         transactions.push_back(create_test_transaction(&env, 2, 200, "transfer"));
         transactions.push_back(create_test_transaction(&env, 3, 300, "budget"));
 
-        let metrics = compute_batch_metrics(&env, &transactions, 100);
+        with_frame(&env, || {
+            let metrics = compute_batch_metrics(&env, &transactions, 100);
 
-        assert_eq!(metrics.tx_count, 3);
-        assert_eq!(metrics.total_volume, 600);
-        assert_eq!(metrics.avg_amount, 200);
-        assert_eq!(metrics.min_amount, 100);
-        assert_eq!(metrics.max_amount, 300);
+            assert_eq!(metrics.tx_count, 3);
+            assert_eq!(metrics.total_volume, 600);
+            assert_eq!(metrics.avg_amount, 200);
+            assert_eq!(metrics.min_amount, 100);
+            assert_eq!(metrics.max_amount, 300);
+        });
     }
 
     #[test]
@@ -774,9 +785,11 @@ mod tests {
         transactions.push_back(create_test_transaction(&env, 2, 300, "transfer"));
         transactions.push_back(create_test_transaction(&env, 3, 200, "budget"));
 
-        let category_metrics = compute_category_metrics(&env, &transactions, 1000);
+        with_frame(&env, || {
+            let category_metrics = compute_category_metrics(&env, &transactions, 1000);
 
-        assert_eq!(category_metrics.len(), 2);
+            assert_eq!(category_metrics.len(), 2);
+        });
     }
 
     #[test]
