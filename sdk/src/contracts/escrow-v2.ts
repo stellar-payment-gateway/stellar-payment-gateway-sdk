@@ -14,6 +14,7 @@ import {
   i128,
   u32,
   u64,
+  voidScVal,
   type ScVal,
 } from '../convert.js';
 
@@ -143,8 +144,4 @@ const decodeEscrowV2OrNull = (scVal: ScVal): EscrowV2Record | null => {
 
 function isVoid(scVal: ScVal): boolean {
   return scVal.switch().name === 'scvVoid';
-}
-
-function voidScVal(): ScVal {
-  return { switch: () => ({ name: 'scvVoid' }) } as unknown as ScVal;
 }

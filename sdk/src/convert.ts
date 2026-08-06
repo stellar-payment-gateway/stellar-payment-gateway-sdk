@@ -79,6 +79,13 @@ export function vec(values: ScVal[]): ScVal {
 }
 
 /**
+ * Encode a `None` value for optional (`Option<T>`) contract arguments.
+ */
+export function voidScVal(): ScVal {
+  return xdr.ScVal.scvVoid();
+}
+
+/**
  * Encode a contract struct (named-field `#[contracttype] struct`) as an
  * `ScVal::Map` with symbol keys.
  */

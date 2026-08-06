@@ -18,6 +18,7 @@ import {
   struct,
   u64,
   vec,
+  voidScVal,
   type ScVal,
 } from '../convert.js';
 
@@ -274,10 +275,4 @@ const decodeEscrowOrNull = (scVal: ScVal): EscrowRecord | null => {
 
 function isVoid(scVal: ScVal): boolean {
   return scVal.switch().name === 'scvVoid';
-}
-
-function voidScVal(): ScVal {
-  // Return a void ScVal for optional arguments; falls back to an empty struct
-  // that the gateway converts to ScVoid at the contract boundary.
-  return { switch: () => ({ name: 'scvVoid' }) } as unknown as ScVal;
 }

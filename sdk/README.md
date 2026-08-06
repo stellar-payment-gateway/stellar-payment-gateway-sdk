@@ -2,15 +2,15 @@
 
 TypeScript client SDK for the Stellar Payment Gateway Soroban contracts.
 
-Wraps the on-chain contracts behind typed, ergonomic clients:
+Wraps the on-chain contracts behind typed, ergonomic clients. Every workspace
+contract has a matching client:
 
-| Client                    | Contract                          | Highlights                                   |
-| ------------------------- | --------------------------------- | -------------------------------------------- |
-| `BatchConversionClient`   | `BatchConversionContract`         | batch currency conversion, rates, liquidity  |
-| `FeeClient`               | `FeeContract`                     | fee collection, tiers, reconciliation        |
-| `AccountStatusClient`     | `AccountStatusContract`           | freeze/unfreeze, admin management            |
-| `ZkVerifierClient`        | `ZkVerifierContract`              | spending-proof verification                  |
-| `MultiCurrencyWalletClient`| `MultiCurrencyWallet`             | oracle-backed currency conversion            |
+| Area | Clients |
+| ---- | ------- |
+| Core | `BatchConversionClient`, `BatchTransferClient`, `TransactionsClient`, `RecurringPaymentClient`, `EscrowClient`, `EscrowV2Client`, `FeeClient`, `AccountStatusClient`, `ZkVerifierClient`, `MultiCurrencyWalletClient` |
+| Savings & budgets | `SavingsClient`, `SavingsGoalsClient`, `BudgetClient`, `SharedBudgetsClient`, `BudgetAllocationClient`, `SpendingLimitsClient`, `SpendingPolicyClient`, `SpendingRulesClient`, `SpendingCategoriesClient` |
+| Payments & treasury | `BatchRewardsClient`, `BatchTokenMintClient`, `BatchPaymentRemindersClient`, `BatchNotificationsClient`, `BatchHistoryClient`, `BatchWalletCreationClient`, `TreasuryClient`, `AllowancesClient`, `RewardsClient`, `PenaltyClient`, `NotificationClient`, `ActivityFeedClient` |
+| Admin & governance | `AdminClient`, `PausableClient`, `AccessControlClient`, `AssetControlClient`, `UserClient`, `UsersClient`, `WalletStatusClient`, `TransactionalClient`, `TransactionValidationClient`, `TransactionAnalyticsClient`, `CurrencyConversionClient`, `MerchantTaggingClient`, `CategoryAnalyticsClient`, `TransferClient`, `BalanceClient` |
 
 ## Install
 
@@ -93,3 +93,14 @@ npm run build       # emit dist/
 ```
 
 The test suite runs against a fully mocked RPC server — no network access required.
+
+## Feature coverage
+
+All contract clients follow the same conventions: state-changing methods go
+through `submit` (returning a decoded `SubmitResult` or a decoded value via
+`assertResult`), accessors go through `read`. Amounts are `bigint`, addresses
+are strkeys, optional fields decode to `null`, and `Option<T>` arguments accept
+`null`/`undefined`. Nested contract enums decode into discriminated unions
+(e.g. `{ status: 'success' } | { status: 'failure', errorCode }`).
+
+See `src/contracts/*.ts` for the exact contract method each client wraps.
