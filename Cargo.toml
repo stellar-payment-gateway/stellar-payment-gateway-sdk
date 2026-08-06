@@ -109,10 +109,6 @@ path = "tests/governance_tests.rs"
 name = "throttling_tests"
 path = "tests/throttling_tests.rs"
 
-[[test]]
-name = "throttling_test"
-path = "contracts/tests/throttling_test.rs"
-
 
 [[test]]
 name = "analytics_indexing_tests"

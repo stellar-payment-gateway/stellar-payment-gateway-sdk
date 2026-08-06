@@ -28,7 +28,14 @@ Thumbs.db
 *.json
 !package.json
 !tsconfig.json
+# Allow test snapshots (checked-in reference data)
+!**/test_snapshots/**/*.json
 *.txt
+!*.md
+!CHANGELOG.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
 /*.js
 node_modules/
 dist/
