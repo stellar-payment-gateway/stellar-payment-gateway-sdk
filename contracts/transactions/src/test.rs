@@ -10,6 +10,7 @@ use soroban_sdk::{
 #[test]
 fn test_initialize_and_get_admin() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -22,6 +23,7 @@ fn test_initialize_and_get_admin() {
 #[should_panic]
 fn test_initialize_duplicate_fails() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -34,11 +36,13 @@ fn test_initialize_duplicate_fails() {
 #[test]
 fn test_create_transaction() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
+    env.ledger().set_timestamp(1_700_000_000);
 
     let from = Address::generate(&env);
     let to = Address::generate(&env);
@@ -89,6 +93,7 @@ fn test_create_transaction() {
 #[should_panic]
 fn test_create_transaction_invalid_amount_zero() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -121,6 +126,7 @@ fn test_create_transaction_invalid_amount_zero() {
 #[should_panic]
 fn test_create_transaction_invalid_amount_negative() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -152,6 +158,7 @@ fn test_create_transaction_invalid_amount_negative() {
 #[test]
 fn test_update_transaction_note() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -193,6 +200,7 @@ fn test_update_transaction_note() {
 #[test]
 fn test_update_transaction_amount() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -229,13 +237,15 @@ fn test_update_transaction_amount() {
 }
 
 #[test]
-#[should_panic]
-fn test_transaction_limit_per_user() {
+#[should_panic]fn test_transaction_limit_per_user() {
     let env = Env::default();
+    env.mock_all_auths();
+    // 1000 create calls exceed the default test budget; lift it so the
+    // 1000-per-user limit (not the budget) is what rejects the extra call.
+    env.budget().reset_unlimited();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
-
     client.initialize(&admin);
 
     let from = Address::generate(&env);
@@ -247,21 +257,45 @@ fn test_transaction_limit_per_user() {
     let tx_type = Symbol::new(&env, "transfer");
     let is_public = false;
 
-    for _ in 0..1000 {
-        client.create_transaction(&from, &to, &one, &note, &memo, &tags, &tx_type, &is_public);
+    for i in 0..1000 {
+        // Distinct amounts so the duplicate-detection guard never trips;
+        // only the 1000-per-user limit should reject the extra transaction.
+        client.create_transaction(
+            &from,
+            &to,
+            &(one + i as i128),
+            &note,
+            &memo,
+            &tags,
+            &tx_type,
+            &is_public,
+            &Map::new(&env),
+        );
     }
 
-    client.create_transaction(&from, &to, &one, &note, &memo, &tags, &tx_type, &is_public);
+    client.create_transaction(
+        &from,
+        &to,
+        &one,
+        &note,
+        &memo,
+        &tags,
+        &tx_type,
+        &is_public,
+        &Map::new(&env),
+    );
 }
 
 #[test]
 fn test_get_transaction_timestamp() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
 
     client.initialize(&admin);
+    env.ledger().set_timestamp(1_700_000_000);
 
     let from = Address::generate(&env);
     let to = Address::generate(&env);
@@ -296,6 +330,7 @@ fn test_get_transaction_timestamp() {
 #[test]
 fn test_get_user_transactions() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -358,6 +393,7 @@ fn test_get_user_transactions() {
 #[test]
 fn test_clear_user_transactions() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -412,6 +448,7 @@ fn test_clear_user_transactions() {
 #[test]
 fn test_transaction_counter_increments() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -471,6 +508,7 @@ fn test_transaction_counter_increments() {
 #[test]
 fn test_transaction_exists() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -507,6 +545,7 @@ fn test_transaction_exists() {
 #[test]
 fn test_create_transaction_stores_creation_timestamp() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -545,6 +584,7 @@ fn test_create_transaction_stores_creation_timestamp() {
 #[test]
 fn test_get_transaction_memo() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -580,6 +620,7 @@ fn test_get_transaction_memo() {
 #[test]
 fn test_get_transaction_memo_nonexistent() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -596,6 +637,7 @@ fn test_get_transaction_memo_nonexistent() {
 #[test]
 fn test_delete_transaction_admin_can_remove_record() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -635,6 +677,7 @@ fn test_delete_transaction_admin_can_remove_record() {
 #[should_panic]
 fn test_delete_transaction_rejects_non_admin() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -669,6 +712,7 @@ fn test_delete_transaction_rejects_non_admin() {
 #[test]
 fn test_get_all_transactions() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -722,7 +766,10 @@ fn test_get_all_transactions() {
     assert_eq!(all_txs.len(), 3);
 
     // Check that all transactions are present
-    let ids: Vec<Symbol> = all_txs.iter().map(|tx| tx.id.clone()).collect();
+    let mut ids: Vec<Symbol> = Vec::new(&env);
+    for tx in all_txs.iter() {
+        ids.push_back(tx.id.clone());
+    }
     assert!(ids.contains(&tx1_id));
     assert!(ids.contains(&tx2_id));
     assert!(ids.contains(&tx3_id));
@@ -731,6 +778,7 @@ fn test_get_all_transactions() {
 #[test]
 fn test_get_all_transactions_empty() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -758,8 +806,18 @@ fn test_get_transactions_paginated_basic() {
     let tx_type = Symbol::new(&env, "transfer");
     let is_public = false;
 
-    for _ in 0..5 {
-        client.create_transaction(&from, &to, &100, &note, &memo, &tags, &tx_type, &is_public);
+    for i in 0..5 {
+        client.create_transaction(
+            &from,
+            &to,
+            &(100 + i as i128),
+            &note,
+            &memo,
+            &tags,
+            &tx_type,
+            &is_public,
+            &Map::new(&env),
+        );
     }
 
     // fetch all 5
@@ -831,7 +889,17 @@ fn test_get_transactions_paginated_offset_beyond_total() {
     let tags = Vec::new(&env);
     let tx_type = Symbol::new(&env, "transfer");
     let is_public = false;
-    client.create_transaction(&from, &to, &100, &note, &memo, &tags, &tx_type, &is_public);
+    client.create_transaction(
+        &from,
+        &to,
+        &100,
+        &note,
+        &memo,
+        &tags,
+        &tx_type,
+        &is_public,
+        &Map::new(&env),
+    );
 
     let page = client.get_transactions_paginated(&10, &5);
     assert_eq!(page.len(), 0);
@@ -853,7 +921,17 @@ fn test_get_transactions_paginated_limit_zero() {
     let tags = Vec::new(&env);
     let tx_type = Symbol::new(&env, "transfer");
     let is_public = false;
-    client.create_transaction(&from, &to, &100, &note, &memo, &tags, &tx_type, &is_public);
+    client.create_transaction(
+        &from,
+        &to,
+        &100,
+        &note,
+        &memo,
+        &tags,
+        &tx_type,
+        &is_public,
+        &Map::new(&env),
+    );
 
     let page = client.get_transactions_paginated(&0, &0);
     assert_eq!(page.len(), 0);
@@ -876,8 +954,20 @@ fn test_get_transactions_paginated_limit_capped_at_100() {
     let tx_type = Symbol::new(&env, "transfer");
     let is_public = false;
 
-    for _ in 0..120 {
-        client.create_transaction(&from, &to, &1, &note, &memo, &tags, &tx_type, &is_public);
+    for i in 0..120 {
+        // Distinct amounts avoid the duplicate guard while still exercising
+        // the pagination cap of 100.
+        client.create_transaction(
+            &from,
+            &to,
+            &(1 + i as i128),
+            &note,
+            &memo,
+            &tags,
+            &tx_type,
+            &is_public,
+            &Map::new(&env),
+        );
     }
 
     // requesting 200 should be capped to 100
@@ -903,12 +993,39 @@ fn test_get_user_transactions_filtered_by_tx_type() {
     let expense = Symbol::new(&env, "expense");
     let is_public = false;
 
-    let income_tx_1 =
-        client.create_transaction(&user, &to, &100, &note, &memo, &tags, &income, &is_public);
-    let expense_tx =
-        client.create_transaction(&user, &to, &50, &note, &memo, &tags, &expense, &is_public);
-    let income_tx_2 =
-        client.create_transaction(&user, &to, &75, &note, &memo, &tags, &income, &is_public);
+    let income_tx_1 = client.create_transaction(
+        &user,
+        &to,
+        &100,
+        &note,
+        &memo,
+        &tags,
+        &income,
+        &is_public,
+        &Map::new(&env),
+    );
+    let expense_tx = client.create_transaction(
+        &user,
+        &to,
+        &50,
+        &note,
+        &memo,
+        &tags,
+        &expense,
+        &is_public,
+        &Map::new(&env),
+    );
+    let income_tx_2 = client.create_transaction(
+        &user,
+        &to,
+        &75,
+        &note,
+        &memo,
+        &tags,
+        &income,
+        &is_public,
+        &Map::new(&env),
+    );
 
     let income_txs = client.get_user_transactions_filtered(&user, &income);
     assert_eq!(income_txs.len(), 2);
@@ -923,6 +1040,7 @@ fn test_get_user_transactions_filtered_by_tx_type() {
 #[test]
 fn test_create_transaction_with_visibility_flag() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -939,14 +1057,33 @@ fn test_create_transaction_with_visibility_flag() {
     let tx_type = Symbol::new(&env, "income");
 
     // 1. Create a public transaction
-    let tx_public_id =
-        client.create_transaction(&from, &to, &amount, &note, &memo, &tags, &tx_type, &true);
+    let tx_public_id = client.create_transaction(
+        &from,
+        &to,
+        &amount,
+        &note,
+        &memo,
+        &tags,
+        &tx_type,
+        &true,
+        &Map::new(&env),
+    );
     let tx_public = client.get_transaction(&tx_public_id).unwrap();
     assert_eq!(tx_public.is_public, true);
 
-    // 2. Create a private transaction
-    let tx_private_id =
-        client.create_transaction(&from, &to, &amount, &note, &memo, &tags, &tx_type, &false);
+    // 2. Create a private transaction (different memo so the duplicate
+    //    guard doesn't reject the second identical payment).
+    let tx_private_id = client.create_transaction(
+        &from,
+        &to,
+        &amount,
+        &note,
+        &String::from_str(&env, "private memo"),
+        &tags,
+        &tx_type,
+        &false,
+        &Map::new(&env),
+    );
     let tx_private = client.get_transaction(&tx_private_id).unwrap();
     assert_eq!(tx_private.is_public, false);
 }
@@ -972,9 +1109,39 @@ fn test_get_total_expense() {
     // No transactions yet
     assert_eq!(client.get_total_expense(), 0);
 
-    client.create_transaction(&user, &to, &200, &note, &memo, &tags, &income, &is_public);
-    client.create_transaction(&user, &to, &50, &note, &memo, &tags, &expense, &is_public);
-    client.create_transaction(&user, &to, &30, &note, &memo, &tags, &expense, &is_public);
+    client.create_transaction(
+        &user,
+        &to,
+        &200,
+        &note,
+        &memo,
+        &tags,
+        &income,
+        &is_public,
+        &Map::new(&env),
+    );
+    client.create_transaction(
+        &user,
+        &to,
+        &50,
+        &note,
+        &memo,
+        &tags,
+        &expense,
+        &is_public,
+        &Map::new(&env),
+    );
+    client.create_transaction(
+        &user,
+        &to,
+        &30,
+        &note,
+        &memo,
+        &tags,
+        &expense,
+        &is_public,
+        &Map::new(&env),
+    );
 
     // Only expense amounts should be summed
     assert_eq!(client.get_total_expense(), 80);
@@ -983,6 +1150,7 @@ fn test_get_total_expense() {
 #[test]
 fn test_create_transaction_with_metadata() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -1026,6 +1194,7 @@ fn test_create_transaction_with_metadata() {
 #[test]
 fn test_set_and_get_metadata() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -1067,6 +1236,7 @@ fn test_set_and_get_metadata() {
 #[test]
 fn test_set_metadata_non_owner_fails() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
@@ -1100,6 +1270,7 @@ fn test_set_metadata_non_owner_fails() {
 #[test]
 fn test_get_metadata_nonexistent_returns_none() {
     let env = Env::default();
+    env.mock_all_auths();
     let admin = Address::generate(&env);
     let contract_id = env.register(TransactionsContract, ());
     let client = TransactionsContractClient::new(&env, &contract_id);
