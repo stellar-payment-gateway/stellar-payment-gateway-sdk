@@ -13,10 +13,11 @@
 
 #![cfg(test)]
 
-use crate::{ConversionRequest, MultiCurrencyWalletContract, MultiCurrencyWalletClient};
+use crate::{ConversionRequest, MultiCurrencyWallet, MultiCurrencyWalletClient};
 use shared::oracle::Price;
 use soroban_sdk::{
-    contract, contractimpl, contracttype, testutils::Address as _, Address, Env, String,
+    contract, contractimpl, contracttype, testutils::{Address as _, Ledger}, Address, Env,
+    String,
 };
 
 /// Storage keys for the mock oracle's observations.
@@ -25,6 +26,9 @@ use soroban_sdk::{
 enum MockDataKey {
     Price,
     Twap,
+    /// The `window_seconds` argument of the most recent `get_twap` call, so
+    /// tests can assert which TWAP window the wallet actually requested.
+    LastTwapWindow,
 }
 
 /// Minimal in-test oracle implementing the Reflector-style interface the
@@ -74,8 +78,13 @@ impl MockOracleContract {
         env: Env,
         _asset_a: String,
         _asset_b: String,
-        _window_seconds: u64,
+        window_seconds: u64,
     ) -> Price {
+        // Record the requested window so tests can assert the wallet asks for
+        // the configured 5-minute (300s) TWAP window.
+        env.storage()
+            .instance()
+            .set(&MockDataKey::LastTwapWindow, &window_seconds);
         env.storage()
             .instance()
             .get(&MockDataKey::Twap)
@@ -83,6 +92,15 @@ impl MockOracleContract {
                 value: 0,
                 timestamp: 0,
             })
+    }
+
+    /// Returns the `window_seconds` argument of the most recent `get_twap`
+    /// call, or `0` if no TWAP has been requested yet.
+    pub fn get_last_twap_window(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&MockDataKey::LastTwapWindow)
+            .unwrap_or(0)
     }
 }
 
@@ -94,12 +112,16 @@ fn setup_with(
 ) -> (Env, MockOracleContractClient<'static>, MultiCurrencyWalletClient<'static>) {
     let env = Env::default();
     env.mock_all_auths();
+    // Pin the ledger timestamp so staleness assertions are deterministic: the
+    // SDK's default test timestamp is 0, which would make any "past"
+    // observation saturate to the same value and look fresh.
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
 
     let oracle_id = env.register(MockOracleContract, ());
     let oracle = MockOracleContractClient::new(&env, &oracle_id);
     oracle.initialize();
 
-    let wallet_id = env.register(MultiCurrencyWalletContract, ());
+    let wallet_id = env.register(MultiCurrencyWallet, ());
     let wallet = MultiCurrencyWalletClient::new(&env, &wallet_id);
 
     let owner = Address::generate(&env);
@@ -281,13 +303,32 @@ fn test_convert_currency_panics_when_oracle_unreachable() {
     // than fabricate a rate.
     let ghost_oracle = Address::generate(&env);
 
-    let wallet_id = env.register(MultiCurrencyWalletContract, ());
+    let wallet_id = env.register(MultiCurrencyWallet, ());
     let wallet = MultiCurrencyWalletClient::new(&env, &wallet_id);
     let owner = Address::generate(&env);
     wallet.initialize(&owner, &ghost_oracle, &300, &1_000);
 
     wallet.add_balance(&usdc(&env), &1000);
     wallet.convert_currency(&convert_request(&env, 400, 90));
+}
+
+/// The wallet's OracleManager must request the 5-minute (300s) TWAP window
+/// when it validates a price, and that window must reach the oracle contract
+/// as the `window_seconds` argument of `get_twap`.
+#[test]
+fn test_convert_currency_requests_300s_twap_window() {
+    let (env, oracle, wallet) = setup();
+    seed_fresh_prices(&oracle, &env);
+
+    // No TWAP requested yet.
+    assert_eq!(oracle.get_last_twap_window(), 0);
+
+    wallet.add_balance(&usdc(&env), &1000);
+    wallet.convert_currency(&convert_request(&env, 400, 90));
+
+    // The OracleManager hardcodes the 5-minute window; assert the mock
+    // recorded exactly 300 seconds.
+    assert_eq!(oracle.get_last_twap_window(), 300);
 }
 
 #[test]
@@ -323,7 +364,7 @@ fn test_is_oracle_fresh_false_when_oracle_unreachable() {
 
     let ghost_oracle = Address::generate(&env);
 
-    let wallet_id = env.register(MultiCurrencyWalletContract, ());
+    let wallet_id = env.register(MultiCurrencyWallet, ());
     let wallet = MultiCurrencyWalletClient::new(&env, &wallet_id);
     let owner = Address::generate(&env);
     wallet.initialize(&owner, &ghost_oracle, &300, &1_000);
@@ -350,7 +391,7 @@ fn test_convert_currency_before_initialize_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let wallet_id = env.register(MultiCurrencyWalletContract, ());
+    let wallet_id = env.register(MultiCurrencyWallet, ());
     let wallet = MultiCurrencyWalletClient::new(&env, &wallet_id);
 
     // Never initialized: converting must panic ("Wallet not initialized").
